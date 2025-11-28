@@ -5,15 +5,17 @@ import numpy as np
 import time
 import os
 import shutil
-
-# Try importing PySpark (Falls back to simulation if not found)
+import sys
 try:
+    import pyspark
     from pyspark.sql import SparkSession
     from pyspark.ml import PipelineModel
     from pyspark.ml.classification import RandomForestClassificationModel
     HAS_PYSPARK = True
-except ImportError:
+    #st.success("PySpark successfully imported")
+except Exception as e:
     HAS_PYSPARK = False
+    st.error(f"PySpark import failed: {e}")
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
@@ -26,38 +28,34 @@ st.set_page_config(
 # --- CACHING: LOAD MODEL ONCE ---
 @st.cache_resource
 def load_spark_resources():
-    """
-    Initialize Spark and Load Models.
-    This runs only once due to @st.cache_resource
-    """
     if not HAS_PYSPARK:
+        st.warning("PySpark not installed, using simulation mode.")
         return None, None, None
 
     try:
-        # 1. Create/Get Spark Session
         spark = SparkSession.builder \
             .appName("Streamlit-Churn-App") \
             .config("spark.ui.showConsoleProgress", "false") \
             .master("local[*]") \
             .getOrCreate()
 
-        # 2. Define Model Paths (Ensure these folders exist locally)
-        # You must download 'models/feature_engineering_pipeline' and 'models/churn_model' 
-        # from GCS to your local project folder for this to work.
-        pipeline_path = "models/feature_engineering_pipeline"
-        model_path = "models/churn_model"
+        # FIX: absolute paths
+        BASE = os.path.dirname(os.path.abspath(__file__))
+        pipeline_path = os.path.join(BASE, "models/feature_engineering_pipeline")
+        model_path = os.path.join(BASE, "models/churn_model")
 
-        if os.path.exists(pipeline_path) and os.path.exists(model_path):
-            feature_pipeline = PipelineModel.load(pipeline_path)
-            rf_model = RandomForestClassificationModel.load(model_path)
-            return spark, feature_pipeline, rf_model
-        else:
-            return spark, None, None
-            
+        # Debug output
+        #st.write("Pipeline path:", pipeline_path, os.path.exists(pipeline_path))
+        #st.write("Model path:", model_path, os.path.exists(model_path))
+
+        feature_pipeline = PipelineModel.load(pipeline_path)
+        rf_model = RandomForestClassificationModel.load(model_path)
+
+        return spark, feature_pipeline, rf_model
+
     except Exception as e:
-        st.error(f"Spark Initialization Error: {e}")
+        st.error(f"Model load failed: {e}")
         return None, None, None
-
 # Load resources globally
 spark, pipeline_model, rf_model = load_spark_resources()
 
@@ -297,22 +295,22 @@ elif page == "Live Prediction Demo":
             # COLUMN 1: Demographics
             with col1:
                 st.markdown("##### Demographics")
-                gender = st.selectbox("Gender", ["Male", "Female"])
-                age = st.slider("Age", 18, 90, 30)
+                gender = st.selectbox("Gender", ["Male", "Female", "Other"])
+                age = st.slider("Age", 18, 80, 30)
                 
             # COLUMN 2: Account Info
             with col2:
                 st.markdown("##### Account Info")
                 tenure = st.slider("Tenure (Months)", 0, 72, 12)
                 contract = st.selectbox("Contract Type", ["Month-to-Month", "One Year", "Two Year"])
-                payment = st.selectbox("Payment Method", ["Electronic Check", "Mailed Check", "Bank Transfer", "Credit Card"])
+                payment = st.selectbox("Payment Method", ['Mailed Check' ,'Bank Transfer', 'Electronic Check', 'Credit Card'])
                 
             # COLUMN 3: Services
             with col3:
                 st.markdown("##### Services")
-                monthly = st.number_input("Monthly Charges ($)", 0.0, 150.0, 70.0)
-                internet = st.selectbox("Internet Service", ["DSL", "Fiber", "No"])
-                tech_support = st.selectbox("Tech Support", ["Yes", "No"])
+                monthly = st.number_input("Monthly Charges ($)", 0.0, 150.0, 60.0)
+                internet = st.selectbox("Internet Service", ['None', 'Fiber', 'DSL', 'Unknown'])
+                tech_support = st.selectbox("Tech Support", ["Yes", "No", 'Unknown'])
                 
             # Calculated automatically
             total_charges = tenure * monthly
